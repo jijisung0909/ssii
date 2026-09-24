@@ -1006,7 +1006,7 @@ footer{
 <!-- GALLERY -->
 <section id="gallery" class="page">
   <div class="section-title"><div><h2>🖼️ 인천논현중 갤러리</h2><p>항목별로 사진과 글을 올리는 커뮤니티 게시판</p></div></div>
-  <div class="alert warning" style="margin-bottom:14px">⚠ 이 게시판의 글과 사진은 <b>서버에 저장되어 모든 방문자에게 공개</b>됩니다. 학생 이름·연락처·얼굴이 나온 사진은 올리지 마세요.</div>
+  <div class="alert warning" style="margin-bottom:14px">⚠ 이 게시판의 글과 사진은 <b>서버에 저장되어 모든 방문자에게 공개</b>됩니다. 학생 이름·연락처·얼굴이 나온 사진은 올리지 마세요.<br>글·댓글 작성 시 <b>IP 주소가 기록</b>됩니다. (범죄 예방·수사 협조 목적, 관리자만 열람, 90일 후 삭제)</div>
   <div class="card" id="acctBar" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 18px;margin-bottom:12px"></div>
   <div class="card board" id="board"></div>
 </section>
@@ -1454,13 +1454,13 @@ function renderAcct(){
   const u=me(),el=document.getElementById("acctBar");
   if(!sb){el.style.display="none";return;}
   el.innerHTML=u
-    ?`<span>👤 <b>${esc(u.nick)}</b> ${badge(u.role)||'<span class="tag" style="margin-left:4px">방문자</span>'}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="showNotifs()">🔔 알림${unread?` <b style="color:var(--danger)">(${unread})</b>`:""}</button><button class="btn btn-ghost" onclick="showFavs()">⭐ 즐겨찾기</button>${isAdmin(u)?'<button class="btn btn-ghost" onclick="showUsers()">🛠 사용자 관리</button>':""}<button class="btn btn-ghost" onclick="doLogout()">로그아웃</button></span>`
+    ?`<span>👤 <b>${esc(u.nick)}</b> ${badge(u.role)||'<span class="tag" style="margin-left:4px">방문자</span>'}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="showNotifs()">🔔 알림${unread?` <b style="color:var(--danger)">(${unread})</b>`:""}</button><button class="btn btn-ghost" onclick="showFavs()">⭐ 즐겨찾기</button>${isAdmin(u)?'<button class="btn btn-ghost" onclick="showUsers()">🛠 사용자 관리</button><button class="btn btn-ghost" onclick="showLogs()">🔒 접속 기록</button>':""}<button class="btn btn-ghost" onclick="doLogout()">로그아웃</button></span>`
     :`<span style="color:var(--muted);font-size:13px">🔐 글쓰기·댓글·추천·다운로드는 로그인 후 이용할 수 있습니다. 글 읽기는 누구나 가능합니다.</span><span style="display:flex;gap:6px"><button class="btn btn-ghost" onclick="showAuth('login')">로그인</button><button class="btn btn-primary" onclick="showAuth('signup')">회원가입</button></span>`;
 }
 function showAuth(mode){
   const su=mode==="signup";
   show(`<div class="bd-top"><h3>${su?"회원가입":"로그인"}</h3></div><div class="bd-form">
-    ${su?'<div class="alert">가입 후 <b>인증 메일</b>의 링크를 눌러야 로그인할 수 있습니다. 이메일은 인증과 로그인에만 쓰이며 게시판에는 표시되지 않습니다.<br>가장 먼저 가입한 계정은 <b>관리자</b>, 이후 가입자는 <b>방문자</b>로 시작합니다.</div>':""}
+    ${su?'<div class="alert">가입 후 <b>인증 메일</b>의 링크를 눌러야 로그인할 수 있습니다. 이메일은 인증과 로그인에만 쓰이며 게시판에는 표시되지 않습니다.<br>글·댓글 작성 시 IP 주소가 범죄 예방·수사 협조 목적으로 기록되며 90일 후 삭제됩니다.<br>가장 먼저 가입한 계정은 <b>관리자</b>, 이후 가입자는 <b>방문자</b>로 시작합니다.</div>':""}
     ${su?'<input id="aEmail" type="email" maxlength="80" placeholder="이메일" autocomplete="email">':""}
     <input id="aNick" maxlength="${su?12:80}" placeholder="${su?"닉네임 (2~12자)":"이메일 (이전에 닉네임으로 가입했다면 닉네임)"}" autocomplete="username">
     <input id="aPw" type="password" maxlength="40" placeholder="비밀번호 (6자 이상)" autocomplete="${su?"new-password":"current-password"}" onkeydown="if(event.key==='Enter')${su?'doSignup()':'doLogin()'}">
@@ -1497,6 +1497,36 @@ async function doLogin(){
   await loadMe();await refreshUnread();toast(`${ME?ME.nick:""}님 환영합니다.`);showList();
 }
 async function doLogout(){await sb.auth.signOut();ME=null;unread=0;toast("로그아웃했습니다.");renderAcct();showList();}
+/* 접속 기록 (관리자 전용): 글·댓글 작성 시 서버가 기록한 IP */
+let lq="";
+async function showLogs(){
+  if(!isAdmin(me())){toast("관리자만 접근할 수 있습니다.");return;}
+  sb.rpc("purge_audit_logs",{keep_days:90}).then(()=>{});
+  let q=sb.from("audit_logs").select("id,created_at,action,ref_id,detail,ip,profiles(nickname)").order("id",{ascending:false}).limit(200);
+  if(lq) q=q.ilike("ip",`%${lq.replace(/[%_\\,()*]/g," ")}%`);
+  const {data,error}=await q;
+  if(error){toast(error.message);return;}
+  const rows=data.map(x=>`<tr class="row" onclick="openPost(${x.ref_id||0})"><td>${fmtFull(x.created_at)}</td><td>${x.action==="post"?"글":"댓글"}</td><td>${x.profiles?esc(x.profiles.nickname):"탈퇴"}</td><td>${esc(x.ip||"-")}</td><td class="t">${esc(x.detail||"")}</td></tr>`).join("")||'<tr><td colspan="5" style="padding:30px">기록이 없습니다.</td></tr>';
+  show(`<div class="bd-top"><h3>🔒 접속 기록 <small style="color:var(--muted);font-weight:400">(최근 ${data.length}건)</small></h3><button class="btn btn-ghost" onclick="showList()">← 목록</button></div>
+    <div class="alert warning" style="margin:14px 18px">글·댓글 작성 시 서버가 기록한 IP입니다. 관리자만 볼 수 있고 90일이 지나면 자동 삭제됩니다.<br>범죄 예방·수사 협조 목적 외에는 열람·공유하지 마세요. IP만으로 개인을 확정할 수는 없습니다(공용 와이파이·VPN·통신사 공유 IP).</div>
+    <div class="bd-foot"><div class="bd-search"><input id="lqi" value="${esc(lq)}" placeholder="IP 검색" onkeydown="if(event.key==='Enter'){lq=this.value.trim();showLogs()}"><button class="btn btn-ghost" onclick="lq=val('lqi').trim();showLogs()">검색</button></div></div>
+    <div style="overflow-x:auto"><table class="bd-table" style="min-width:640px"><colgroup><col style="width:130px"><col style="width:56px"><col style="width:100px"><col style="width:140px"><col></colgroup><thead><tr><th>시간</th><th>구분</th><th>작성자</th><th>IP</th><th>내용(글 제목·댓글 앞부분)</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+}
+
+/* 사용자 관리 (관리자 전용): 특정 사용자에게 역할 부여/회수 */
+async function showUsers(){
+  const u=me();
+  if(!isAdmin(u)){toast("관리자만 접근할 수 있습니다.");return;}
+  let q=sb.from("profiles").select("id,nickname,role,created_at").order("created_at");
+  if(bu) q=q.ilike("nickname",`%${bu.replace(/[%_\\]/g," ")}%`);
+  const {data,error}=await q;
+  if(error){toast(error.message);return;}
+  const rows=data.map(x=>`<tr><td class="t">${esc(x.nickname)}${badge(x.role)}${x.id===u.id?" <small>(나)</small>":""}</td><td>${fmtFull(x.created_at)}</td><td><select onchange="setRole('${x.id}',this.value)" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text)">${Object.entries(ROLES).map(([k,v])=>`<option value="${k}" ${x.role===k?"selected":""}>${v}</option>`).join("")}</select></td></tr>`).join("")||'<tr><td colspan="3" style="padding:30px">해당하는 회원이 없습니다.</td></tr>';
+  show(`<div class="bd-top"><h3>🛠 사용자 관리</h3><button class="btn btn-ghost" onclick="showList()">← 목록</button></div>
+    <div class="alert" style="margin:14px 18px"><b>역할별 권한</b><br>방문자: 글·댓글 작성, 본인 글·댓글 삭제<br>운영자: 방문자 권한 + 모든 글·댓글 삭제, 공지 등록/해제<br>관리자: 운영자 권한 + 사용자 관리(역할 부여/회수)</div>
+    <div class="bd-foot"><div class="bd-search"><input id="buq" value="${esc(bu)}" placeholder="닉네임 검색" onkeydown="if(event.key==='Enter'){bu=this.value.trim();showUsers()}"><button class="btn btn-ghost" onclick="bu=val('buq').trim();showUsers()">검색</button></div><span style="font-size:12px;color:var(--muted)">회원 ${data.length}명</span></div>
+    <table class="bd-table"><colgroup><col><col style="width:140px"><col style="width:110px"></colgroup><thead><tr><th>닉네임</th><th>가입일</th><th>역할 (바로 저장)</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
 async function setRole(id,role){
   const u=me();
   if(!isAdmin(u)) return;
@@ -1535,7 +1565,7 @@ async function showList(scroll=true){
   let rows=data.map(p=>row(p,false)).join("");
   if(!rows) rows='<tr><td colspan="6" style="padding:40px">등록된 게시글이 없습니다.</td></tr>';
   if(plain&&bs.page===1){
-    rows=`<tr class="row pin" onclick="openModal('갤러리 이용 안내','1. 학생 이름·연락처·얼굴이 드러나는 사진은 올리지 마세요.\\n2. 타인을 비방하거나 불쾌감을 주는 글은 금지입니다.\\n3. 글과 사진은 모든 방문자에게 공개됩니다.\\n4. 운영진은 규칙에 어긋나는 글과 댓글을 삭제할 수 있습니다.')"><td class="c-n"><span class="tag red">공지</span></td><td class="t"><b>갤러리 이용 안내</b></td><td>관리자</td><td></td><td class="c-v"></td><td></td></tr>`+pins.map(p=>row(p,true)).join("")+rows;
+    rows=`<tr class="row pin" onclick="openModal('갤러리 이용 안내','1. 학생 이름·연락처·얼굴이 드러나는 사진은 올리지 마세요.\\n2. 타인을 비방하거나 불쾌감을 주는 글은 금지입니다.\\n3. 글과 사진은 모든 방문자에게 공개됩니다.\\n4. 운영진은 규칙에 어긋나는 글과 댓글을 삭제할 수 있습니다.\\n5. 글·댓글 작성 시 IP 주소가 기록되며, 협박·폭력·테러 예고 등 범죄 행위는 수사기관에 제공될 수 있습니다.')"><td class="c-n"><span class="tag red">공지</span></td><td class="t"><b>갤러리 이용 안내</b></td><td>관리자</td><td></td><td class="c-v"></td><td></td></tr>`+pins.map(p=>row(p,true)).join("")+rows;
   }
   const s0=Math.max(1,Math.min(bs.page-2,pages-4)),e0=Math.min(pages,s0+4);
   let pg=bs.page>1?`<button onclick="goPage(${bs.page-1})">‹</button>`:"";
@@ -1569,6 +1599,7 @@ function openWrite(){
       <textarea id="wBody" rows="9" maxlength="3000" placeholder="내용을 입력하세요"></textarea>
       <div><button class="btn btn-ghost" onclick="document.getElementById('wFile').click()">📷 사진 첨부 (최대 10장)</button><input type="file" id="wFile" accept="image/*" multiple hidden onchange="addDraft(this.files);this.value=''"></div>
       <div class="bd-prev" id="wPrev"></div>
+      <div style="font-size:11px;color:var(--muted)">※ 작성 시 IP 주소가 서버에 기록됩니다. (범죄 예방·수사 협조 목적, 관리자만 열람, 90일 후 삭제)</div>
       ${isStaff(u)?'<label style="font-size:13px"><input type="checkbox" id="wPin" style="width:auto;margin-right:6px">공지로 등록</label>':""}
       <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-ghost" onclick="showList()">취소</button><button class="btn btn-primary" onclick="submitPost()">등록</button></div>
     </div>`);
